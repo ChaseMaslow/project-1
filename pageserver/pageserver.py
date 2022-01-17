@@ -13,6 +13,7 @@
   program is run).
 """
 
+import os        # Reference files in subdirectory
 import config    # Configure from .ini files and command line
 import logging   # Better than print statements
 logging.basicConfig(format='%(levelname)s:%(message)s',
@@ -72,10 +73,13 @@ CAT = """
 # See:  https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
 # or    http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html
 ##
-STATUS_OK = "HTTP/1.0 200 OK\n\n"
+STATUS_OK = "HTTP/1.0 200 OK\n"
 STATUS_FORBIDDEN = "HTTP/1.0 403 Forbidden\n\n"
 STATUS_NOT_FOUND = "HTTP/1.0 404 Not Found\n\n"
 STATUS_NOT_IMPLEMENTED = "HTTP/1.0 401 Not Implemented\n\n"
+# HTTP response headers
+CONTENT_HTML = "Content-Type: text/html \n\n"
+CONTENT_CSS = "Content-Type: text/css \n\n"
 
 
 def respond(sock):
@@ -89,10 +93,43 @@ def respond(sock):
     log.info("--- Received request ----")
     log.info("Request was {}\n***\n".format(request))
 
+    """
+    if '~' in request || '..' in request:
+        log.info("Illegal request: {}".format(request))
+        transmit(STATUS_FORBIDDEN, sock)
+        transmit("\nI found illegal characters in this request: {}\n".format(request), sock)
+    else:  
+    """
     parts = request.split()
     if len(parts) > 1 and parts[0] == "GET":
-        transmit(STATUS_OK, sock)
-        transmit(CAT, sock)
+        req_f = parts[1]
+        req_fname = str()
+        header = str()
+        flag = False
+        if req_f == "/trivia.css":
+            header = CONTENT_CSS
+            req_fname = "trivia.css"
+        elif req_f == "/trivia.html":
+            header = CONTENT_HTML
+            req_fname = "trivia.html"
+        else:
+            flag = True
+        
+        if flag == False:
+            page = find_file(req_fname, pages)
+            if page is not None:
+                with open(page) as f:
+                    transmit(STATUS_OK, sock)
+                    transmit(header, sock)
+                    transmit(f.read(), sock)
+            else:
+                log.info("Unhandled request: {}".format(request))
+                transmit(STATUS_NOT_FOUND, sock)
+                transmit("\nThe page you were looking for could not be found: {}\n".format(request), sock)
+        else:
+            log.info("Unhandled request: {}".format(request))
+            transmit(STATUS_NOT_FOUND, sock)
+            transmit("\nThe page you were looking for doesn't exist: {}\n".format(request), sock)
     else:
         log.info("Unhandled request: {}".format(request))
         transmit(STATUS_NOT_IMPLEMENTED, sock)
@@ -115,6 +152,13 @@ def transmit(msg, sock):
 # Run from command line
 #
 ###
+
+
+def find_file(name, path):
+    for root, dirs, files in os.walk(path):
+        if name in files:
+            return os.path.join(root, name)
+    return None
 
 
 def get_options():
@@ -140,6 +184,8 @@ def main():
     port = options.PORT
     if options.DEBUG:
         log.setLevel(logging.DEBUG)
+    global pages
+    pages = options.DOCROOT
     sock = listen(port)
     log.info("Listening on port {}".format(port))
     log.info("Socket is {}".format(sock))
