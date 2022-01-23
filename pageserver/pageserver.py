@@ -73,13 +73,10 @@ CAT = """
 # See:  https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
 # or    http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html
 ##
-STATUS_OK = "HTTP/1.0 200 OK\n"
+STATUS_OK = "HTTP/1.0 200 OK\n\n"
 STATUS_FORBIDDEN = "HTTP/1.0 403 Forbidden\n\n"
 STATUS_NOT_FOUND = "HTTP/1.0 404 Not Found\n\n"
 STATUS_NOT_IMPLEMENTED = "HTTP/1.0 401 Not Implemented\n\n"
-# HTTP response headers
-CONTENT_HTML = "Content-Type: text/html \n\n"
-CONTENT_CSS = "Content-Type: text/css \n\n"
 
 
 def respond(sock):
@@ -92,48 +89,36 @@ def respond(sock):
     request = str(request, encoding='utf-8', errors='strict')
     log.info("--- Received request ----")
     log.info("Request was {}\n***\n".format(request))
-
-    """
-    if '~' in request || '..' in request:
-        log.info("Illegal request: {}".format(request))
-        transmit(STATUS_FORBIDDEN, sock)
-        transmit("\nI found illegal characters in this request: {}\n".format(request), sock)
-    else:  
-    """
+    
+    pages = os.listdir(options.DOCROOT)
+    
     parts = request.split()
     if len(parts) > 1 and parts[0] == "GET":
-        req_f = parts[1]
-        req_fname = str()
-        header = str()
-        flag = False
-        if req_f == "/trivia.css":
-            header = CONTENT_CSS
-            req_fname = "trivia.css"
-        elif req_f == "/trivia.html":
-            header = CONTENT_HTML
-            req_fname = "trivia.html"
-        else:
-            flag = True
+    
+        if "~" in parts[1] or ".." in parts[1]:
+            log.info("Illegal request: {}".format(parts[0] + " " + parts[1]))
+            transmit(STATUS_FORBIDDEN, sock)
+            transmit("<h1>403</h1>\n<p>Forbidden request.</p>", sock)
         
-        if flag == False:
-            page = find_file(req_fname, pages)
-            if page is not None:
-                with open(page) as f:
-                    transmit(STATUS_OK, sock)
-                    transmit(header, sock)
-                    transmit(f.read(), sock)
-            else:
-                log.info("Unhandled request: {}".format(request))
-                transmit(STATUS_NOT_FOUND, sock)
-                transmit("\nThe page you were looking for could not be found: {}\n".format(request), sock)
+        elif len(parts[1]) == 1:
+            log.info("Page unspecified, deploying cat.")
+            transmit(STATUS_OK, sock)
+            transmit(CAT, sock)
+        
+        elif parts[1][1:] in pages:
+            log.info("File found: {}".format(parts[1][1:]))
+            with open(os.path.join(options.DOCROOT, parts[1][1:])) as page:
+                transmit(STATUS_OK, sock)
+                transmit(page.read(), sock)
+        
         else:
-            log.info("Unhandled request: {}".format(request))
+            log.info("File not found: {}".format(parts[1][1:]))
             transmit(STATUS_NOT_FOUND, sock)
-            transmit("\nThe page you were looking for doesn't exist: {}\n".format(request), sock)
+            transmit("<h1>404</h1>\n<p>File not found.</p>", sock)
     else:
-        log.info("Unhandled request: {}".format(request))
+        log.info("Unhandled request: {}".format(parts[0] + " " + parts[1]))
         transmit(STATUS_NOT_IMPLEMENTED, sock)
-        transmit("\nI don't handle this request: {}\n".format(request), sock)
+        transmit("\nI don't handle this request: {}\n".format(parts[0] + " " + parts[1]), sock)
 
     sock.shutdown(socket.SHUT_RDWR)
     sock.close()
@@ -152,13 +137,6 @@ def transmit(msg, sock):
 # Run from command line
 #
 ###
-
-
-def find_file(name, path):
-    for root, dirs, files in os.walk(path):
-        if name in files:
-            return os.path.join(root, name)
-    return None
 
 
 def get_options():
@@ -180,12 +158,11 @@ def get_options():
 
 
 def main():
+    global options
     options = get_options()
     port = options.PORT
     if options.DEBUG:
         log.setLevel(logging.DEBUG)
-    global pages
-    pages = options.DOCROOT
     sock = listen(port)
     log.info("Listening on port {}".format(port))
     log.info("Socket is {}".format(sock))
